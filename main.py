@@ -1,9 +1,18 @@
-import datetime
+import pandas as pd
+import dash_table
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
 import plotly
-from dash.dependencies import Input, Output
+import base64
+import requests
+import hashlib
+import hmac
+import datetime
+from urllib import parse
+import urllib.parse
+from privateconfig import p_api_key, p_secret_key
+from dash.dependencies import Input, Output, State
 from huobi.client.market import MarketClient
 from huobi.constant import CandlestickInterval
 
@@ -15,6 +24,20 @@ app.layout = html.Div(
         html.H4('Huobi Futures Live Update'),
         dcc.Graph(id='live-update-graph'),
         dcc.Graph(id='update-graph'),
+        html.Div([
+            html.Div([
+                html.Button('Buy', id='submit-buy', n_clicks=0),
+                    dcc.Input(id="buy-price", type="number", placeholder="Price"),
+                    dcc.Input(id="buy-quant", type="number", placeholder="Quantity")
+        ]),
+            html.Div([
+                html.Button('Sell', id='submit-sell', n_clicks=0),
+                    dcc.Input(id="sell-price", type="number", placeholder="Price"),
+                    dcc.Input(id="sell-quant", type="number", placeholder="Quantity")
+                    ])
+        ]),
+        html.Plaintext("No buy or sell order", id="result"),
+        html.Div(id='table'),
         dcc.Interval(
             id='interval-component-live',
             interval=1000, # in milliseconds
@@ -33,6 +56,88 @@ live_data = {
     'time': [],
     'price': []
 }
+
+
+def post_huobi(url, data, api_key, secret_key):
+    timestamp = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
+    param = {"AccessKeyId": api_key,
+             "SignatureVersion": "2",
+             "SignatureMethod": "HmacSHA256",
+             "Timestamp": timestamp
+             }
+
+    host = urllib.parse.urlparse(url).hostname
+    path = urllib.parse.urlparse(url).path
+
+    method = "POST"
+
+    keys = sorted(param.keys())
+    qs0 = '&'.join(['%s=%s' % (key, parse.quote(param[key], safe='')) for key in keys])
+    payload0 = '%s\n%s\n%s\n%s' % (method, host, path, qs0)
+    dig = hmac.new(secret_key.encode('utf-8'), msg=payload0.encode('utf-8'), digestmod=hashlib.sha256).digest()
+    s = base64.b64encode(dig).decode()
+    param["Signature"] = s
+    response = requests.post(url + "?" + urllib.parse.urlencode(param), headers={'Content-Type': 'application/json'},
+                             json=data)
+    return response.json()
+
+@app.callback(Output('result', 'children'),
+              [Input('submit-buy', 'n_clicks'), Input('submit-sell', 'n_clicks')],
+              state=[State('buy-price', 'value'),
+                     State('buy-quant', 'value'),
+                     State('sell-price', 'value'),
+                     State('sell-quant', 'value')
+                     ]
+              )
+def execute_order(n_clicks_buy, n_clicks_sell, input1, input2, input3, input4):
+    ctx = dash.callback_context
+
+    if not ctx.triggered:
+        button_id = 'No clicks yet'
+    else:
+        button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    if button_id == 'submit-buy' and input1 > 0 and input2 > 0:
+        data = {'volume': int(input2),
+                'direction': 'buy',
+                'offset': 'open',
+                'lever_rate': 3,
+                'symbol': 'ETH',
+                'order_price_type': 'opponent',
+                'contract_type': 'next_week',
+                'price': float(input1)
+                }
+        message = post_huobi('https://api.hbdm.com/api/v1/contract_order', data, p_api_key, p_secret_key)
+        return 'Output from API {0}'.format(message['err_msg'])
+    elif button_id == 'submit-sell' and input3 > 0 and input4 > 0:
+        data = {'volume': int(input2),
+                'direction': 'sell',
+                'offset': 'open',
+                'lever_rate': 3,
+                'symbol': 'ETH',
+                'order_price_type': 'opponent',
+                'contract_type': 'next_week',
+                'price': float(input3)
+                }
+        message = post_huobi('https://api.hbdm.com/api/v1/contract_order', data, p_api_key, p_secret_key)
+        return 'Output from API {0}'.format(message['err_msg'])
+    return 'No order.'
+
+@app.callback(Output('table', 'children'),
+              Input('interval-component', 'n_intervals'))
+def order_history(n):
+    data = {'type': 1,
+            'trade_type': 0,
+            'create_date': 30,
+            'status': 0,
+            'symbol': 'ETH'
+            }
+    response = post_huobi('https://api.hbdm.com/api/v1/contract_hisorders', data, p_api_key, p_secret_key)
+    df = pd.DataFrame(response['data']['orders'])
+    table = dash_table.DataTable(
+        id='table_orders',
+        columns=[{"name": i, "id": i} for i in df.columns],
+        data=df.to_dict('records'))
+    return table
 
 # Multiple components can update everytime interval gets fired.
 @app.callback(Output('live-update-graph', 'figure'),
