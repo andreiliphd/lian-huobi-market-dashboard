@@ -1,4 +1,5 @@
 import pandas as pd
+import os
 import dash_table
 import dash
 import dash_core_components as dcc
@@ -11,10 +12,12 @@ import hmac
 import datetime
 from urllib import parse
 import urllib.parse
-from privateconfig import p_api_key, p_secret_key
 from dash.dependencies import Input, Output, State
 from huobi.client.market import MarketClient
 from huobi.constant import CandlestickInterval
+
+p_api_key = os.environ['p_api_key']
+p_secret_key = os.environ['p_secret_key']
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 

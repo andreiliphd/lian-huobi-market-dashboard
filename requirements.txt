@@ -1,0 +1,4 @@
+pandas
+requests
+dash
+git+https://github.com/HuobiRDCenter/huobi_Python.git
