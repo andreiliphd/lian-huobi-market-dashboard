@@ -150,7 +150,7 @@ def update_graph_live(n):
     list_obj = market_client.get_candlestick("ETH_CQ", CandlestickInterval.MIN1, 1)
     live_data['price'].append(list_obj[-1].close)
     if len(live_data['price']) >= 1000:
-        live_data['price'] = live_data['price'][:-1000]
+        live_data['price'] = live_data['price'][-1000:]
     live_data['time'].append(datetime.datetime.now().strftime('%c'))
     fig = plotly.tools.make_subplots(rows=1, cols=1, vertical_spacing=0.2)
     fig['layout']['margin'] = {
